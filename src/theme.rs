@@ -12,12 +12,10 @@ const fn rgb(hex: u32) -> Color {
 pub struct Theme {
     pub slug: &'static str,
     pub name: &'static str,
-    pub light: bool,
     pub bg: Color,
     pub fg: Color,
     pub accent: Color,
     pub muted: Color,
-    pub border: Color,
     pub branch: Color,
     pub folder: Color,
     pub sel_bg: Color,
@@ -25,10 +23,6 @@ pub struct Theme {
 }
 
 impl Theme {
-    pub fn base(&self) -> Style {
-        Style::default().bg(self.bg).fg(self.fg)
-    }
-
     pub fn bg_style(&self) -> Style {
         Style::default().bg(self.bg)
     }
@@ -39,10 +33,6 @@ impl Theme {
 
     pub fn accent_style(&self) -> Style {
         self.bg_style().fg(self.accent)
-    }
-
-    pub fn border_style(&self) -> Style {
-        self.bg_style().fg(self.border)
     }
 
     pub fn branch_style(&self) -> Style {
@@ -65,12 +55,10 @@ pub static THEMES: [Theme; 6] = [
     Theme {
         slug: "tokyonight",
         name: "Tokyo Night",
-        light: false,
         bg: rgb(0x1a1b26),
         fg: rgb(0xc0caf5),
         accent: rgb(0x7aa2f7),
         muted: rgb(0x565f89),
-        border: rgb(0x2f3549),
         branch: rgb(0x3b4261),
         folder: rgb(0x7dcfff),
         sel_bg: rgb(0x33467c),
@@ -79,12 +67,10 @@ pub static THEMES: [Theme; 6] = [
     Theme {
         slug: "catppuccin",
         name: "Catppuccin",
-        light: false,
         bg: rgb(0x1e1e2e),
         fg: rgb(0xcdd6f4),
         accent: rgb(0xcba6f7),
         muted: rgb(0x7f849c),
-        border: rgb(0x313244),
         branch: rgb(0x45475a),
         folder: rgb(0x89b4fa),
         sel_bg: rgb(0x45475a),
@@ -93,12 +79,10 @@ pub static THEMES: [Theme; 6] = [
     Theme {
         slug: "nord",
         name: "Nord",
-        light: false,
         bg: rgb(0x2e3440),
         fg: rgb(0xd8dee9),
         accent: rgb(0x88c0d0),
         muted: rgb(0x616e88),
-        border: rgb(0x3b4252),
         branch: rgb(0x434c5e),
         folder: rgb(0x81a1c1),
         sel_bg: rgb(0x434c5e),
@@ -107,12 +91,10 @@ pub static THEMES: [Theme; 6] = [
     Theme {
         slug: "gruvbox",
         name: "Gruvbox",
-        light: false,
         bg: rgb(0x282828),
         fg: rgb(0xebdbb2),
         accent: rgb(0xfabd2f),
         muted: rgb(0x928374),
-        border: rgb(0x3c3836),
         branch: rgb(0x504945),
         folder: rgb(0x83a598),
         sel_bg: rgb(0x45403d),
@@ -121,12 +103,10 @@ pub static THEMES: [Theme; 6] = [
     Theme {
         slug: "rosepine",
         name: "Rose Pine",
-        light: false,
         bg: rgb(0x191724),
         fg: rgb(0xe0def4),
         accent: rgb(0xc4a7e7),
         muted: rgb(0x6e6a86),
-        border: rgb(0x26233a),
         branch: rgb(0x403d52),
         folder: rgb(0x9ccfd8),
         sel_bg: rgb(0x403d52),
@@ -135,12 +115,10 @@ pub static THEMES: [Theme; 6] = [
     Theme {
         slug: "dawn",
         name: "Rose Pine Dawn",
-        light: true,
         bg: rgb(0xfaf4ed),
         fg: rgb(0x575279),
         accent: rgb(0xd7827e),
         muted: rgb(0x9893a5),
-        border: rgb(0xd9cfc7),
         branch: rgb(0xd6ccc3),
         folder: rgb(0x56949f),
         sel_bg: rgb(0xeaddd5),

@@ -105,6 +105,7 @@ dependencies = [
  "ratatui",
  "serde",
  "toml",
+ "unicode-width",
 ]
 
 [[package]]

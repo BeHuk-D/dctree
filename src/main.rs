@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod screen;
 mod theme;
 mod tree;
 mod ui;
@@ -9,13 +10,12 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
-use ratatui::Terminal;
-use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::{self, Event};
 use ratatui::crossterm::{cursor, execute, terminal};
 
 use app::{App, Outcome};
 use config::Config;
+use screen::Screen;
 use theme::THEMES;
 use tree::Tree;
 
@@ -176,23 +176,24 @@ fn run_ui(app: &mut App) -> Result<Outcome, String> {
 
     terminal::enable_raw_mode().map_err(|err| err.to_string())?;
     let _guard = TerminalGuard;
-    execute!(io::stderr(), terminal::EnterAlternateScreen, cursor::Hide)
-        .map_err(|err| err.to_string())?;
+    execute!(io::stderr(), cursor::Hide).map_err(|err| err.to_string())?;
 
-    let backend = CrosstermBackend::new(io::stderr());
-    let mut terminal = Terminal::new(backend).map_err(|err| err.to_string())?;
-
+    let mut screen = Screen::new();
+    let mut dirty = true;
     loop {
-        terminal
-            .draw(|frame| ui::draw(frame, app))
-            .map_err(|err| err.to_string())?;
+        if dirty {
+            screen.draw(app).map_err(|err| err.to_string())?;
+            dirty = false;
+        }
         if let Some(outcome) = app.outcome.take() {
+            screen.finish().map_err(|err| err.to_string())?;
             return Ok(outcome);
         }
         if event::poll(Duration::from_millis(250)).map_err(|err| err.to_string())?
             && let Event::Key(key) = event::read().map_err(|err| err.to_string())?
         {
             app.on_key(key);
+            dirty = true;
         }
     }
 }
@@ -202,7 +203,7 @@ struct TerminalGuard;
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = terminal::disable_raw_mode();
-        let _ = execute!(io::stderr(), terminal::LeaveAlternateScreen, cursor::Show);
+        let _ = execute!(io::stderr(), cursor::Show);
     }
 }
 

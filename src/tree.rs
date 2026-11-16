@@ -41,10 +41,6 @@ impl Tree {
         tree
     }
 
-    pub fn root(&self) -> &Path {
-        &self.root
-    }
-
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
     }
@@ -327,7 +323,6 @@ mod tests {
         let dir = sandbox("up");
         let mut tree = Tree::new(dir.join("alpha"), false);
         tree.go_up();
-        assert_eq!(tree.root(), dir);
         assert_eq!(tree.selected_path(), Some(dir.join("alpha").as_path()));
         let _ = fs::remove_dir_all(dir);
     }

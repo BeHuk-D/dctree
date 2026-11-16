@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -54,21 +54,4 @@ pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .filter(|path| !path.as_os_str().is_empty())
-}
-
-pub fn display_path(path: &Path) -> String {
-    let text = if let Some(home) = home_dir()
-        && let Ok(rest) = path.strip_prefix(&home)
-    {
-        if rest.as_os_str().is_empty() {
-            "~".to_string()
-        } else {
-            format!("~/{}", rest.display())
-        }
-    } else {
-        path.display().to_string()
-    };
-    text.chars()
-        .map(|ch| if ch.is_control() { '?' } else { ch })
-        .collect()
 }
