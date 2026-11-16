@@ -43,6 +43,7 @@ struct Arguments {
     theme: Option<String>,
     pick_theme: bool,
     show_hidden: bool,
+    search_all: bool,
     action: Action,
 }
 
@@ -77,6 +78,7 @@ fn run() -> Result<ExitCode, String> {
     let first_run = !config_exists && theme_override.is_none();
     let tree = Tree::new(root, config.show_hidden);
     let mut app = App::new(tree, config, first_run, args.pick_theme, theme_override);
+    app.search_all = args.search_all;
 
     let outcome = run_ui(&mut app)?;
     if let Some(message) = app.save_error.take() {
@@ -98,6 +100,7 @@ fn parse_args() -> Result<Arguments, String> {
         theme: None,
         pick_theme: false,
         show_hidden: false,
+        search_all: false,
         action: Action::Run,
     };
     let mut items = std::env::args().skip(1);
@@ -108,6 +111,7 @@ fn parse_args() -> Result<Arguments, String> {
             "-V" | "--version" => parsed.action = Action::Version,
             "-p" | "--pick-theme" => parsed.pick_theme = true,
             "-H" | "--hidden" => parsed.show_hidden = true,
+            "-a" | "--all" => parsed.search_all = true,
             "-t" | "--theme" => {
                 let value = items
                     .next()
@@ -228,6 +232,7 @@ OPTIONS
     -t, --theme <NAME>   start with a theme
     -p, --pick-theme     open the theme picker on start
     -H, --hidden         show hidden directories
+    -a, --all            search through all subdirectories
     -h, --help           print this help
     -V, --version        print version
 
@@ -235,17 +240,23 @@ THEMES
     {themes}
 
 KEYS
-    ↑ ↓ / k j     move
-    → / l         expand directory
-    ← / h         collapse or go to parent
-    ⏎             select directory and exit
-    ⌫             go one level up
-    g / G         first / last
-    ~             jump to home
-    .             toggle hidden directories
-    t             change theme
-    esc / q       cancel
-    ctrl+c        cancel
+    ↑ ↓ / pgup pgdn   move
+    → / ←             expand / collapse
+    ⏎                 select directory and exit
+    ⌫                 go one level up
+    typing            search directories in the current directory
+    ctrl+t            change theme
+    ctrl+h            toggle hidden directories
+    ctrl+a            jump to home
+    esc / ctrl+c      cancel
+
+SEARCH
+    typing            refine the query
+    ↑ ↓ / pgup pgdn   move through matches
+    ⏎                 select the match and exit
+    ⌫                 erase a character
+    esc               close search
+    ctrl+u            clear the query
 
 SHELL SETUP
     bash / zsh    eval "$(box2cell init bash)"

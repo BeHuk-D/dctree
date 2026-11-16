@@ -80,9 +80,12 @@ fn finish_sequence(used: u16, reserved: u16) -> String {
 }
 
 fn emit_row(out: &mut String, buffer: &Buffer, row: u16, width: u16) {
+    let Some(end) = last_used(buffer, row, width) else {
+        return;
+    };
     let mut column = 0;
     let mut current = None;
-    while column < width {
+    while column <= end && column < width {
         let cell = &buffer[(column, row)];
         let style = (cell.fg, cell.bg, cell.modifier);
         if current != Some(style) {
@@ -93,6 +96,24 @@ fn emit_row(out: &mut String, buffer: &Buffer, row: u16, width: u16) {
         out.push_str(symbol);
         column += (UnicodeWidthStr::width(symbol).max(1)) as u16;
     }
+}
+
+fn last_used(buffer: &Buffer, row: u16, width: u16) -> Option<u16> {
+    let mut last = None;
+    let mut column = 0;
+    while column < width {
+        let cell = &buffer[(column, row)];
+        let symbol_width = UnicodeWidthStr::width(cell.symbol()).max(1) as u16;
+        if cell.fg != Color::Reset
+            || cell.bg != Color::Reset
+            || !cell.modifier.is_empty()
+            || cell.symbol() != " "
+        {
+            last = Some(column + symbol_width - 1);
+        }
+        column += symbol_width;
+    }
+    last
 }
 
 fn push_style(out: &mut String, (fg, bg, modifier): (Color, Color, Modifier)) {
@@ -150,6 +171,19 @@ mod tests {
         assert!(out.contains("\x1b[1m"));
         assert!(out.contains("38;2;1;2;3"));
         assert!(out.contains("48;2;4;5;6"));
+    }
+
+    #[test]
+    fn skips_trailing_empty_cells() {
+        let area = Rect::new(0, 0, 6, 1);
+        let mut buffer = Buffer::empty(area);
+        buffer[(0, 0)]
+            .set_symbol("a")
+            .set_style(Style::default().fg(Color::Rgb(1, 2, 3)));
+        let mut out = String::new();
+        emit_row(&mut out, &buffer, 0, 6);
+        assert!(out.contains('a'));
+        assert_eq!(out.matches(' ').count(), 0);
     }
 
     #[test]

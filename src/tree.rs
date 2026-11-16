@@ -49,8 +49,30 @@ impl Tree {
         &self.visible
     }
 
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn show_hidden(&self) -> bool {
         self.show_hidden
+    }
+
+    pub fn child_directories(&self) -> Vec<PathBuf> {
+        self.nodes
+            .first()
+            .map(|root| {
+                root.children
+                    .iter()
+                    .map(|&idx| self.nodes[idx].path.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn collect_directories(root: &Path, show_hidden: bool) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        collect_into(root, show_hidden, &mut out);
+        out
     }
 
     pub fn selected_index(&self) -> Option<usize> {
@@ -229,6 +251,15 @@ impl Tree {
     }
 }
 
+fn collect_into(dir: &Path, show_hidden: bool, out: &mut Vec<PathBuf>) {
+    for entry in read_dirs(dir, show_hidden) {
+        out.push(entry.path.clone());
+        if !entry.is_symlink {
+            collect_into(&entry.path, show_hidden, out);
+        }
+    }
+}
+
 struct Entry {
     path: PathBuf,
     name: String,
@@ -324,6 +355,31 @@ mod tests {
         let mut tree = Tree::new(dir.join("alpha"), false);
         tree.go_up();
         assert_eq!(tree.selected_path(), Some(dir.join("alpha").as_path()));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn collects_nested_directories_for_recursive_search() {
+        let dir = sandbox("collect");
+        let all = Tree::collect_directories(&dir, false);
+        assert!(all.contains(&dir.join("alpha")));
+        assert!(all.contains(&dir.join("alpha/nested")));
+        assert!(all.contains(&dir.join("beta")));
+        assert!(!all.contains(&dir.join(".hidden")));
+        assert!(!all.contains(&dir.join("file.txt")));
+        let hidden = Tree::collect_directories(&dir, true);
+        assert!(hidden.contains(&dir.join(".hidden")));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn child_directories_lists_only_the_first_level() {
+        let dir = sandbox("children");
+        let tree = Tree::new(dir.clone(), false);
+        assert_eq!(
+            tree.child_directories(),
+            vec![dir.join("alpha"), dir.join("beta")]
+        );
         let _ = fs::remove_dir_all(dir);
     }
 

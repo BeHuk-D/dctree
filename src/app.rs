@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
@@ -6,9 +6,10 @@ use crate::config::Config;
 use crate::theme::{THEMES, Theme};
 use crate::tree::Tree;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     Tree,
+    Search,
     Picker,
 }
 
@@ -26,9 +27,15 @@ pub struct App {
     pub scroll: usize,
     pub outcome: Option<Outcome>,
     pub save_error: Option<String>,
+    pub query: String,
+    pub matches: Vec<PathBuf>,
+    pub search_sel: usize,
+    pub search_scroll: usize,
+    pub search_all: bool,
     config: Config,
     return_theme: usize,
     theme_locked: bool,
+    search_index: Option<(PathBuf, bool, Vec<PathBuf>)>,
 }
 
 impl App {
@@ -63,16 +70,22 @@ impl App {
             scroll: 0,
             outcome: None,
             save_error: None,
+            query: String::new(),
+            matches: Vec::new(),
+            search_sel: 0,
+            search_scroll: 0,
+            search_all: false,
             config,
             return_theme: theme_idx,
             theme_locked: theme_override.is_some(),
+            search_index: None,
         }
     }
 
     pub fn theme(&self) -> &'static Theme {
         match self.mode {
             Mode::Picker => &THEMES[self.picker_idx],
-            Mode::Tree => &THEMES[self.theme_idx],
+            Mode::Tree | Mode::Search => &THEMES[self.theme_idx],
         }
     }
 
@@ -80,38 +93,102 @@ impl App {
         if key.kind != KeyEventKind::Press {
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        if ctrl && matches!(key.code, KeyCode::Char('c')) {
             self.outcome = Some(Outcome::Cancel);
             return;
         }
         match self.mode {
-            Mode::Tree => self.tree_key(key.code),
+            Mode::Tree => self.tree_key(key),
+            Mode::Search => self.search_key(key),
             Mode::Picker => self.picker_key(key.code),
         }
     }
 
-    fn tree_key(&mut self, code: KeyCode) {
-        match code {
-            KeyCode::Char('q') | KeyCode::Esc => self.outcome = Some(Outcome::Cancel),
-            KeyCode::Up | KeyCode::Char('k') => self.tree.move_by(-1),
-            KeyCode::Down | KeyCode::Char('j') => self.tree.move_by(1),
+    fn tree_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::ALT) {
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('t') => self.open_picker(),
+                KeyCode::Char('h') => self.toggle_hidden(),
+                KeyCode::Char('a') => {
+                    self.tree.home();
+                    self.search_index = None;
+                }
+                _ => {}
+            }
+            return;
+        }
+        match key.code {
+            KeyCode::Esc => self.outcome = Some(Outcome::Cancel),
+            KeyCode::Up => self.tree.move_by(-1),
+            KeyCode::Down => self.tree.move_by(1),
             KeyCode::PageUp => self.tree.move_by(-10),
             KeyCode::PageDown => self.tree.move_by(10),
-            KeyCode::Home | KeyCode::Char('g') => self.tree.select_first(),
-            KeyCode::End | KeyCode::Char('G') => self.tree.select_last(),
-            KeyCode::Right | KeyCode::Char('l') => self.tree.expand(),
-            KeyCode::Left | KeyCode::Char('h') => self.tree.collapse(),
-            KeyCode::Backspace => self.tree.go_up(),
-            KeyCode::Char('~') => self.tree.home(),
-            KeyCode::Char('.') => {
-                self.tree.toggle_hidden();
-                self.sync_config();
+            KeyCode::Home => self.tree.select_first(),
+            KeyCode::End => self.tree.select_last(),
+            KeyCode::Right => self.tree.expand(),
+            KeyCode::Left => self.tree.collapse(),
+            KeyCode::Backspace => {
+                self.tree.go_up();
+                self.search_index = None;
             }
-            KeyCode::Char('t') => self.open_picker(),
             KeyCode::Enter => {
                 if let Some(path) = self.tree.selected_path() {
                     self.outcome = Some(Outcome::Select(path.to_path_buf()));
                 }
+            }
+            KeyCode::Char(ch) => self.start_search(ch),
+            _ => {}
+        }
+    }
+
+    fn search_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::ALT) {
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('u') => self.close_search(),
+                KeyCode::Char('h') => self.toggle_hidden(),
+                KeyCode::Char('a') => {
+                    self.tree.home();
+                    self.search_index = None;
+                    self.refresh_matches();
+                }
+                _ => {}
+            }
+            return;
+        }
+        match key.code {
+            KeyCode::Esc => self.close_search(),
+            KeyCode::Up => self.search_move(-1),
+            KeyCode::Down => self.search_move(1),
+            KeyCode::PageUp => self.search_move(-10),
+            KeyCode::PageDown => self.search_move(10),
+            KeyCode::Home => self.search_select(0),
+            KeyCode::End => {
+                let last = self.matches.len().saturating_sub(1);
+                self.search_select(last);
+            }
+            KeyCode::Backspace => {
+                self.query.pop();
+                if self.query.is_empty() {
+                    self.close_search();
+                } else {
+                    self.refresh_matches();
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(path) = self.matches.get(self.search_sel) {
+                    self.outcome = Some(Outcome::Select(path.clone()));
+                }
+            }
+            KeyCode::Char(ch) => {
+                self.query.push(ch);
+                self.refresh_matches();
             }
             _ => {}
         }
@@ -126,6 +203,73 @@ impl App {
             KeyCode::End | KeyCode::Char('G') => self.picker_idx = THEMES.len() - 1,
             KeyCode::Enter => self.confirm_picker(),
             _ => {}
+        }
+    }
+
+    fn start_search(&mut self, ch: char) {
+        self.query.clear();
+        self.query.push(ch);
+        self.mode = Mode::Search;
+        self.refresh_matches();
+    }
+
+    fn close_search(&mut self) {
+        self.query.clear();
+        self.matches.clear();
+        self.search_sel = 0;
+        self.search_scroll = 0;
+        self.mode = Mode::Tree;
+    }
+
+    fn refresh_matches(&mut self) {
+        let query = self.query.to_lowercase();
+        self.matches = if self.search_all {
+            self.ensure_index();
+            match &self.search_index {
+                Some((_, _, dirs)) => dirs
+                    .iter()
+                    .filter(|path| name_matches(path, &query))
+                    .cloned()
+                    .collect(),
+                None => Vec::new(),
+            }
+        } else {
+            self.tree
+                .child_directories()
+                .into_iter()
+                .filter(|path| name_matches(path, &query))
+                .collect()
+        };
+        self.search_sel = 0;
+        self.search_scroll = 0;
+    }
+
+    fn ensure_index(&mut self) {
+        let root = self.tree.root().to_path_buf();
+        let hidden = self.tree.show_hidden();
+        let stale = match &self.search_index {
+            Some((cached_root, cached_hidden, _)) => {
+                *cached_root != root || *cached_hidden != hidden
+            }
+            None => true,
+        };
+        if stale {
+            let dirs = Tree::collect_directories(&root, hidden);
+            self.search_index = Some((root, hidden, dirs));
+        }
+    }
+
+    fn search_move(&mut self, delta: isize) {
+        if self.matches.is_empty() {
+            return;
+        }
+        let last = self.matches.len() as isize - 1;
+        self.search_sel = (self.search_sel as isize + delta).clamp(0, last) as usize;
+    }
+
+    fn search_select(&mut self, index: usize) {
+        if !self.matches.is_empty() {
+            self.search_sel = index.min(self.matches.len() - 1);
         }
     }
 
@@ -157,6 +301,14 @@ impl App {
         self.mode = Mode::Picker;
     }
 
+    fn toggle_hidden(&mut self) {
+        self.tree.toggle_hidden();
+        self.sync_config();
+        if self.mode == Mode::Search {
+            self.refresh_matches();
+        }
+    }
+
     fn sync_config(&mut self) {
         if !self.theme_locked {
             self.config.theme = THEMES[self.theme_idx].slug.to_string();
@@ -168,4 +320,10 @@ impl App {
             self.save_error = Some(err.to_string());
         }
     }
+}
+
+fn name_matches(path: &Path, query: &str) -> bool {
+    path.file_name()
+        .map(|name| name.to_string_lossy().to_lowercase().contains(query))
+        .unwrap_or(false)
 }
