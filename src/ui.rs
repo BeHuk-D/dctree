@@ -273,7 +273,7 @@ mod tests {
     use crate::config::Config;
 
     fn sandbox(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("box2cell-ui-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dctree-ui-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("alpha/nested")).unwrap();
         fs::create_dir_all(dir.join("beta")).unwrap();
@@ -316,7 +316,7 @@ mod tests {
         println!("{screen}");
         assert!(screen.contains("alpha"));
         assert!(screen.contains("beta"));
-        assert!(!screen.contains("box2cell"));
+        assert!(!screen.contains("dctree"));
         assert!(!screen.contains('╭'));
         assert_eq!(used, 2);
         let _ = fs::remove_dir_all(dir);
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn long_tree_scrolls_in_place() {
-        let dir = std::env::temp_dir().join(format!("box2cell-ui-scroll-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dctree-ui-scroll-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         for index in 0..30 {
@@ -549,7 +549,7 @@ mod tests {
 
     #[test]
     fn expanding_scrolls_the_opened_directory_to_the_top() {
-        let dir = std::env::temp_dir().join(format!("box2cell-ui-top-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dctree-ui-top-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         for index in 0..20 {
             fs::create_dir_all(dir.join(format!("dir-{index:02}"))).unwrap();

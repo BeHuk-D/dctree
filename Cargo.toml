@@ -1,5 +1,5 @@
 [package]
-name = "box2cell"
+name = "dctree"
 version = "0.1.0"
 edition = "2024"
 

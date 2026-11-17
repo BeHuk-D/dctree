@@ -99,16 +99,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "box2cell"
-version = "0.1.0"
-dependencies = [
- "ratatui",
- "serde",
- "toml",
- "unicode-width",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.20.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -274,6 +264,16 @@ dependencies = [
  "darling_core",
  "quote",
  "syn 3.0.10",
+]
+
+[[package]]
+name = "dctree"
+version = "0.1.0"
+dependencies = [
+ "ratatui",
+ "serde",
+ "toml",
+ "unicode-width",
 ]
 
 [[package]]

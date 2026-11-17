@@ -25,7 +25,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(code) => code,
         Err(message) => {
-            eprintln!("box2cell: {message}");
+            eprintln!("dctree: {message}");
             ExitCode::from(2)
         }
     }
@@ -55,7 +55,7 @@ fn run() -> Result<ExitCode, String> {
             return Ok(ExitCode::SUCCESS);
         }
         Action::Version => {
-            println!("box2cell {VERSION}");
+            println!("dctree {VERSION}");
             return Ok(ExitCode::SUCCESS);
         }
         Action::Init(shell) => {
@@ -82,7 +82,7 @@ fn run() -> Result<ExitCode, String> {
 
     let outcome = run_ui(&mut app)?;
     if let Some(message) = app.save_error.take() {
-        eprintln!("box2cell: could not save config: {message}");
+        eprintln!("dctree: could not save config: {message}");
     }
 
     Ok(match outcome {
@@ -129,7 +129,7 @@ fn parse_args() -> Result<Arguments, String> {
                 parsed.theme = Some(item["--theme=".len()..].to_string());
             }
             _ if item.starts_with('-') && item != "-" => {
-                return Err(format!("unknown option: {item}\ntry `box2cell --help`"));
+                return Err(format!("unknown option: {item}\ntry `dctree --help`"));
             }
             _ => {
                 if parsed.path.replace(PathBuf::from(&item)).is_some() {
@@ -222,11 +222,11 @@ fn unknown_theme(name: &str) -> String {
 fn help() -> String {
     let themes: Vec<&str> = THEMES.iter().map(|theme| theme.slug).collect();
     format!(
-        r#"box2cell {VERSION} — interactive directory navigator
+        r#"dctree {VERSION} — interactive directory navigator
 
 USAGE
-    box2cell [OPTIONS] [PATH]
-    box2cell init [bash|zsh|fish]
+    dctree [OPTIONS] [PATH]
+    dctree init [bash|zsh|fish]
 
 OPTIONS
     -t, --theme <NAME>   start with a theme
@@ -261,8 +261,8 @@ SEARCH
     ctrl+u            clear the query
 
 SHELL SETUP
-    bash / zsh    eval "$(box2cell init bash)"
-    fish          box2cell init fish | source
+    bash / zsh    eval "$(dctree init bash)"
+    fish          dctree init fish | source
 
     Then use `dc` instead of `cd`. To make it the default,
     add `alias cd=dc` after the setup line.
@@ -275,13 +275,13 @@ fn shell_init(shell: &str) -> Result<String, String> {
     match shell {
         "bash" | "zsh" => Ok(r#"dc() {
   local dest
-  dest="$(command box2cell "$@")" || return
+  dest="$(command dctree "$@")" || return
   [ -n "$dest" ] && builtin cd -- "$dest"
 }
 "#
         .to_string()),
         "fish" => Ok(r#"function dc
-    set -l dest (command box2cell $argv)
+    set -l dest (command dctree $argv)
     test $status -eq 0; or return
     test -n "$dest"; and builtin cd -- $dest
 end

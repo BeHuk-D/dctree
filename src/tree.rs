@@ -332,7 +332,7 @@ mod tests {
     use super::*;
 
     fn sandbox(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("box2cell-test-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dctree-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("alpha/nested")).unwrap();
         fs::create_dir_all(dir.join("beta")).unwrap();

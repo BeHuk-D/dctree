@@ -25,7 +25,7 @@ impl Config {
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
             .or_else(|| home_dir().map(|home| home.join(".config")))?;
-        Some(base.join("box2cell").join("config.toml"))
+        Some(base.join("dctree").join("config.toml"))
     }
 
     pub fn load() -> (Self, bool) {
