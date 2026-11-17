@@ -185,6 +185,8 @@ impl App {
         }
         match key.code {
             KeyCode::Esc => self.close_search(),
+            KeyCode::Right => self.search_open(),
+            KeyCode::Left => self.search_parent(),
             KeyCode::Up => self.search_move(-1),
             KeyCode::Down => self.search_move(1),
             KeyCode::PageUp => self.search_move(-10),
@@ -212,6 +214,32 @@ impl App {
                 self.refresh_search();
             }
             _ => {}
+        }
+    }
+
+    fn search_parent(&mut self) {
+        let Some(row) = self.search_rows.get(self.search_sel) else {
+            return;
+        };
+        let Some(parent_guides) = row.guides.len().checked_sub(1) else {
+            return;
+        };
+        if let Some(index) = (0..self.search_sel)
+            .rev()
+            .find(|&index| self.search_rows[index].guides.len() == parent_guides)
+        {
+            self.search_sel = index;
+        }
+    }
+
+    fn search_open(&mut self) {
+        let Some(row) = self.search_rows.get(self.search_sel) else {
+            return;
+        };
+        if row.has_children {
+            self.search_sel += 1;
+        } else {
+            self.close_search();
         }
     }
 

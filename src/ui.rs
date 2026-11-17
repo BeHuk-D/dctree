@@ -508,6 +508,46 @@ mod tests {
     }
 
     #[test]
+    fn search_arrows_walk_the_filtered_tree() {
+        let dir = sandbox("search-nav");
+        let tree = Tree::new(dir.clone(), false);
+        let mut app = App::new(tree, Config::default(), false, false, None);
+        app.search_all = true;
+        type_query(&mut app, "nested");
+        assert_eq!(app.search_rows[app.search_sel].name, "nested");
+        app.on_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        assert_eq!(app.search_rows[app.search_sel].name, "alpha");
+        app.on_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(app.search_rows[app.search_sel].name, "nested");
+        app.on_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(app.mode, Mode::Tree);
+        assert_eq!(
+            app.tree.selected_path(),
+            Some(dir.join("alpha/nested").as_path())
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn tree_stays_navigable_after_search() {
+        let dir = sandbox("after-search");
+        let tree = Tree::new(dir.clone(), false);
+        let mut app = App::new(tree, Config::default(), false, false, None);
+        type_query(&mut app, "al");
+        app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.mode, Mode::Tree);
+        assert_eq!(app.tree.selected_path(), Some(dir.join("alpha").as_path()));
+        app.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(
+            app.tree.selected_path(),
+            Some(dir.join("alpha/nested").as_path())
+        );
+        app.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.tree.selected_path(), Some(dir.join("beta").as_path()));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn expanding_scrolls_the_opened_directory_to_the_top() {
         let dir = std::env::temp_dir().join(format!("box2cell-ui-top-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);

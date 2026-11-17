@@ -253,6 +253,8 @@ KEYS
 SEARCH
     typing            refine the filter
     ↑ ↓ / pgup pgdn   move through the filtered tree
+    →                 dive into the branch or open the match in the tree
+    ←                 go to the parent match
     ⏎                 select the directory and exit
     ⌫                 erase a character
     esc               close search and stay on the result
