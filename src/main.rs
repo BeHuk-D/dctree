@@ -244,26 +244,26 @@ KEYS
     → / ←             expand / collapse
     ⏎                 select directory and exit
     ⌫                 go one level up
-    typing            search directories in the current directory
+    typing            filter the tree by directory name
     ctrl+t            change theme
     ctrl+h            toggle hidden directories
     ctrl+a            jump to home
     esc / ctrl+c      cancel
 
 SEARCH
-    typing            refine the query
-    ↑ ↓ / pgup pgdn   move through matches
-    ⏎                 select the match and exit
+    typing            refine the filter
+    ↑ ↓ / pgup pgdn   move through the filtered tree
+    ⏎                 select the directory and exit
     ⌫                 erase a character
-    esc               close search
+    esc               close search and stay on the result
     ctrl+u            clear the query
 
 SHELL SETUP
     bash / zsh    eval "$(box2cell init bash)"
     fish          box2cell init fish | source
 
-    Then use `bcd` instead of `cd`. To make it the default,
-    add `alias cd=bcd` after the setup line.
+    Then use `dc` instead of `cd`. To make it the default,
+    add `alias cd=dc` after the setup line.
 "#,
         themes = themes.join(", ")
     )
@@ -271,14 +271,14 @@ SHELL SETUP
 
 fn shell_init(shell: &str) -> Result<String, String> {
     match shell {
-        "bash" | "zsh" => Ok(r#"bcd() {
+        "bash" | "zsh" => Ok(r#"dc() {
   local dest
   dest="$(command box2cell "$@")" || return
   [ -n "$dest" ] && builtin cd -- "$dest"
 }
 "#
         .to_string()),
-        "fish" => Ok(r#"function bcd
+        "fish" => Ok(r#"function dc
     set -l dest (command box2cell $argv)
     test $status -eq 0; or return
     test -n "$dest"; and builtin cd -- $dest
@@ -305,6 +305,13 @@ mod tests {
     fn theme_lookup_is_case_insensitive() {
         assert_eq!(theme::by_slug("NORD").map(|item| item.slug), Some("nord"));
         assert!(theme::by_slug("missing").is_none());
+    }
+
+    #[test]
+    fn shell_init_defines_dc() {
+        assert!(shell_init("bash").unwrap().contains("dc()"));
+        assert!(shell_init("fish").unwrap().contains("function dc"));
+        assert!(!shell_init("bash").unwrap().contains("bcd"));
     }
 
     #[test]

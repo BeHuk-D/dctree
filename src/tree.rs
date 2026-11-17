@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::config::home_dir;
 
@@ -131,6 +131,25 @@ impl Tree {
         };
         self.root = home;
         self.selected.clear();
+        self.rebuild();
+    }
+
+    pub fn reveal(&mut self, path: &Path) {
+        let Ok(relative) = path.strip_prefix(&self.root) else {
+            return;
+        };
+        if relative.as_os_str().is_empty() {
+            return;
+        }
+        let mut current = self.root.clone();
+        for component in relative.components() {
+            let Component::Normal(name) = component else {
+                continue;
+            };
+            current.push(name);
+            self.expanded.insert(current.clone());
+        }
+        self.selected = path.to_path_buf();
         self.rebuild();
     }
 
@@ -340,6 +359,24 @@ mod tests {
         let dir = sandbox("expand");
         let mut tree = Tree::new(dir.clone(), false);
         tree.expand();
+        let names: Vec<&str> = tree
+            .visible()
+            .iter()
+            .map(|&idx| tree.nodes()[idx].name.as_str())
+            .collect();
+        assert_eq!(names, ["alpha", "nested", "beta"]);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn reveal_expands_the_branch_and_selects_the_path() {
+        let dir = sandbox("reveal");
+        let mut tree = Tree::new(dir.clone(), false);
+        tree.reveal(&dir.join("alpha/nested"));
+        assert_eq!(
+            tree.selected_path(),
+            Some(dir.join("alpha/nested").as_path())
+        );
         let names: Vec<&str> = tree
             .visible()
             .iter()

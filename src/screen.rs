@@ -12,15 +12,11 @@ use crate::ui;
 
 pub struct Screen {
     reserved: u16,
-    used: u16,
 }
 
 impl Screen {
     pub fn new() -> Self {
-        Self {
-            reserved: 0,
-            used: 0,
-        }
+        Self { reserved: 0 }
     }
 
     pub fn draw(&mut self, app: &mut App) -> io::Result<()> {
@@ -54,27 +50,23 @@ impl Screen {
             }
         }
         out.push_str("\x1b[0m\r");
-        self.used = used;
         write_stderr(&out)
     }
 
     pub fn finish(&mut self) -> io::Result<()> {
-        let mut out = finish_sequence(self.used, self.reserved);
-        out.push_str("\x1b[0m\x1b[?25h");
+        let mut out = clear_sequence(self.reserved);
+        out.push_str("\x1b[?25h");
         write_stderr(&out)
     }
 }
 
-fn finish_sequence(used: u16, reserved: u16) -> String {
-    let mut out = String::new();
-    if used < reserved {
-        let up = reserved - 1 - used;
-        if up > 0 {
-            out.push_str(&format!("\x1b[{up}A"));
+fn clear_sequence(reserved: u16) -> String {
+    let mut out = String::from("\x1b[0m\r");
+    for row in 0..reserved {
+        out.push_str("\x1b[2K");
+        if row + 1 < reserved {
+            out.push_str("\x1b[1A\r");
         }
-        out.push('\r');
-    } else {
-        out.push_str("\r\n");
     }
     out
 }
@@ -187,13 +179,15 @@ mod tests {
     }
 
     #[test]
-    fn parks_cursor_below_a_full_region() {
-        assert_eq!(finish_sequence(5, 5), "\r\n");
+    fn clears_the_whole_inline_region() {
+        assert_eq!(
+            clear_sequence(3),
+            "\x1b[0m\r\x1b[2K\x1b[1A\r\x1b[2K\x1b[1A\r\x1b[2K"
+        );
     }
 
     #[test]
-    fn parks_cursor_at_the_first_free_row() {
-        assert_eq!(finish_sequence(2, 5), "\x1b[2A\r");
-        assert_eq!(finish_sequence(4, 5), "\r");
+    fn clears_nothing_without_reserved_rows() {
+        assert_eq!(clear_sequence(0), "\x1b[0m\r");
     }
 }

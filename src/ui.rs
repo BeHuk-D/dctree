@@ -3,7 +3,7 @@ use std::path::Path;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::app::{App, Mode};
+use crate::app::{App, Mode, SearchRow};
 use crate::theme::{THEMES, Theme};
 use crate::tree::Tree;
 
@@ -38,9 +38,6 @@ fn tree_lines(app: &mut App, width: u16) -> Vec<Line<'static>> {
     }
     if position >= app.scroll + height {
         app.scroll = position + 1 - height;
-    }
-    if app.scroll + height > total {
-        app.scroll = total.saturating_sub(height);
     }
 
     let selected = app.tree.selected_path().map(Path::to_path_buf);
@@ -122,7 +119,7 @@ fn search_lines(app: &mut App, width: u16) -> Vec<Line<'static>> {
         ),
     ])];
 
-    if app.matches.is_empty() {
+    if app.search_rows.is_empty() {
         lines.push(Line::from(vec![
             Span::styled("  ", Style::default()),
             Span::styled(
@@ -134,7 +131,7 @@ fn search_lines(app: &mut App, width: u16) -> Vec<Line<'static>> {
     }
 
     let height = (MAX_HEIGHT as usize - 1).max(1);
-    let total = app.matches.len();
+    let total = app.search_rows.len();
     let position = app.search_sel.min(total - 1);
     if position < app.search_scroll {
         app.search_scroll = position;
@@ -142,33 +139,58 @@ fn search_lines(app: &mut App, width: u16) -> Vec<Line<'static>> {
     if position >= app.search_scroll + height {
         app.search_scroll = position + 1 - height;
     }
-    if app.search_scroll + height > total {
-        app.search_scroll = total.saturating_sub(height);
-    }
 
-    let root = app.tree.root().to_path_buf();
     let end = (app.search_scroll + height).min(total);
     for index in app.search_scroll..end {
-        let path = &app.matches[index];
-        let selected = index == position;
-        let marker = if selected { "› " } else { "  " };
-        let marker_style = if selected {
-            theme.accent_style().add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-        };
-        let name = fit_start(&relative(path, &root), width.saturating_sub(2));
-        let name_style = if selected {
-            theme.selected_style()
-        } else {
-            theme.folder_style()
-        };
-        lines.push(Line::from(vec![
-            Span::styled(marker, marker_style),
-            Span::styled(name, name_style),
-        ]));
+        lines.push(search_line(
+            &app.search_rows[index],
+            width,
+            index == position,
+            &theme,
+        ));
     }
     lines
+}
+
+fn search_line(row: &SearchRow, width: usize, selected: bool, theme: &Theme) -> Line<'static> {
+    let marker_style = if selected {
+        theme.accent_style().add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    let mut spans = vec![Span::styled(
+        if selected { "› " } else { "  " },
+        marker_style,
+    )];
+    for &continues in &row.guides {
+        spans.push(Span::styled(
+            if continues { "│  " } else { "   " },
+            theme.branch_style(),
+        ));
+    }
+    spans.push(Span::styled(
+        if row.is_last { "╰─ " } else { "├─ " },
+        theme.branch_style(),
+    ));
+    spans.push(Span::styled(
+        if row.has_children { "▾ " } else { "▸ " },
+        theme.accent_style(),
+    ));
+
+    let used = 2 + row.guides.len() * 3 + 3 + 2;
+    let name_width = width.saturating_sub(used).max(1);
+    let name_style = if selected {
+        theme.selected_style()
+    } else if row.is_match {
+        theme.folder_style()
+    } else {
+        theme.muted_style()
+    };
+    spans.push(Span::styled(
+        fit_end(&sanitize(&row.name), name_width),
+        name_style,
+    ));
+    Line::from(spans)
 }
 
 fn picker_lines(app: &App, width: u16) -> Vec<Line<'static>> {
@@ -214,14 +236,6 @@ fn picker_lines(app: &App, width: u16) -> Vec<Line<'static>> {
     lines
 }
 
-fn relative(path: &Path, root: &Path) -> String {
-    let rel = path.strip_prefix(root).unwrap_or(path);
-    sanitize(
-        &rel.to_string_lossy()
-            .replace(std::path::MAIN_SEPARATOR, "/"),
-    )
-}
-
 fn sanitize(text: &str) -> String {
     text.chars()
         .map(|ch| if ch.is_control() { '?' } else { ch })
@@ -240,22 +254,6 @@ fn fit_end(text: &str, width: usize) -> String {
     }
     let mut out: String = text.chars().take(width - 1).collect();
     out.push('…');
-    out
-}
-
-fn fit_start(text: &str, width: usize) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    let count = text.chars().count();
-    if count <= width {
-        return text.to_string();
-    }
-    if width == 1 {
-        return "…".to_string();
-    }
-    let mut out = String::from("…");
-    out.extend(text.chars().skip(count - (width - 1)));
     out
 }
 
@@ -446,7 +444,9 @@ mod tests {
         type_query(&mut app, "nested");
         let (screen, _) = render(&mut app, 80);
         println!("{screen}");
-        assert!(screen.contains("alpha/nested"));
+        assert!(screen.contains("alpha"));
+        assert!(screen.contains("nested"));
+        assert_eq!(app.search_rows[app.search_sel].name, "nested");
         app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         match app.outcome {
             Some(Outcome::Select(path)) => assert_eq!(path, dir.join("alpha/nested")),
@@ -468,8 +468,9 @@ mod tests {
         assert_eq!(app.mode, Mode::Tree);
         assert!(app.query.is_empty());
         let (screen, _) = render(&mut app, 80);
-        assert!(screen.contains("alpha"));
         assert!(screen.contains("beta"));
+        assert!(!screen.contains("/be"));
+        assert_eq!(app.tree.selected_path(), Some(dir.join("beta").as_path()));
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -485,6 +486,7 @@ mod tests {
         let (screen, _) = render(&mut app, 80);
         assert!(!screen.contains("/al"));
         assert!(screen.contains("alpha"));
+        assert!(screen.contains("nested"));
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -494,7 +496,7 @@ mod tests {
         let tree = Tree::new(dir.clone(), false);
         let mut app = App::new(tree, Config::default(), false, false, None);
         type_query(&mut app, "a");
-        assert_eq!(app.matches.len(), 2);
+        assert_eq!(app.search_rows.len(), 2);
         app.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         assert_eq!(app.search_sel, 1);
         app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -502,6 +504,29 @@ mod tests {
             Some(Outcome::Select(path)) => assert_eq!(path, dir.join("beta")),
             _ => panic!("expected a selection"),
         }
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn expanding_scrolls_the_opened_directory_to_the_top() {
+        let dir = std::env::temp_dir().join(format!("box2cell-ui-top-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        for index in 0..20 {
+            fs::create_dir_all(dir.join(format!("dir-{index:02}"))).unwrap();
+        }
+        fs::create_dir_all(dir.join("dir-05/child")).unwrap();
+        let tree = Tree::new(dir.clone(), false);
+        let mut app = App::new(tree, Config::default(), false, false, None);
+        app.on_key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
+        for _ in 0..5 {
+            app.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        }
+        app.on_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        let (screen, used) = render(&mut app, 60);
+        println!("{screen}");
+        assert!(screen.lines().next().unwrap().contains("dir-05"));
+        assert!(screen.contains("child"));
+        assert_eq!(used, MAX_HEIGHT);
         let _ = fs::remove_dir_all(dir);
     }
 }

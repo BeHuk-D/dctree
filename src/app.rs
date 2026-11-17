@@ -18,6 +18,22 @@ pub enum Outcome {
     Cancel,
 }
 
+pub struct SearchRow {
+    pub path: PathBuf,
+    pub name: String,
+    pub guides: Vec<bool>,
+    pub is_last: bool,
+    pub is_match: bool,
+    pub has_children: bool,
+}
+
+struct TrieNode {
+    path: PathBuf,
+    name: String,
+    is_match: bool,
+    children: Vec<TrieNode>,
+}
+
 pub struct App {
     pub tree: Tree,
     pub mode: Mode,
@@ -28,7 +44,7 @@ pub struct App {
     pub outcome: Option<Outcome>,
     pub save_error: Option<String>,
     pub query: String,
-    pub matches: Vec<PathBuf>,
+    pub search_rows: Vec<SearchRow>,
     pub search_sel: usize,
     pub search_scroll: usize,
     pub search_all: bool,
@@ -71,7 +87,7 @@ impl App {
             outcome: None,
             save_error: None,
             query: String::new(),
-            matches: Vec::new(),
+            search_rows: Vec::new(),
             search_sel: 0,
             search_scroll: 0,
             search_all: false,
@@ -129,7 +145,12 @@ impl App {
             KeyCode::PageDown => self.tree.move_by(10),
             KeyCode::Home => self.tree.select_first(),
             KeyCode::End => self.tree.select_last(),
-            KeyCode::Right => self.tree.expand(),
+            KeyCode::Right => {
+                self.tree.expand();
+                if let Some(position) = self.tree.selected_pos() {
+                    self.scroll = position;
+                }
+            }
             KeyCode::Left => self.tree.collapse(),
             KeyCode::Backspace => {
                 self.tree.go_up();
@@ -156,7 +177,7 @@ impl App {
                 KeyCode::Char('a') => {
                     self.tree.home();
                     self.search_index = None;
-                    self.refresh_matches();
+                    self.refresh_search();
                 }
                 _ => {}
             }
@@ -170,7 +191,7 @@ impl App {
             KeyCode::PageDown => self.search_move(10),
             KeyCode::Home => self.search_select(0),
             KeyCode::End => {
-                let last = self.matches.len().saturating_sub(1);
+                let last = self.search_rows.len().saturating_sub(1);
                 self.search_select(last);
             }
             KeyCode::Backspace => {
@@ -178,17 +199,17 @@ impl App {
                 if self.query.is_empty() {
                     self.close_search();
                 } else {
-                    self.refresh_matches();
+                    self.refresh_search();
                 }
             }
             KeyCode::Enter => {
-                if let Some(path) = self.matches.get(self.search_sel) {
-                    self.outcome = Some(Outcome::Select(path.clone()));
+                if let Some(row) = self.search_rows.get(self.search_sel) {
+                    self.outcome = Some(Outcome::Select(row.path.clone()));
                 }
             }
             KeyCode::Char(ch) => {
                 self.query.push(ch);
-                self.refresh_matches();
+                self.refresh_search();
             }
             _ => {}
         }
@@ -210,20 +231,31 @@ impl App {
         self.query.clear();
         self.query.push(ch);
         self.mode = Mode::Search;
-        self.refresh_matches();
+        self.refresh_search();
     }
 
     fn close_search(&mut self) {
+        let reveal = self
+            .search_rows
+            .get(self.search_sel)
+            .map(|row| row.path.clone());
         self.query.clear();
-        self.matches.clear();
+        self.search_rows.clear();
         self.search_sel = 0;
         self.search_scroll = 0;
         self.mode = Mode::Tree;
+        if let Some(path) = reveal {
+            self.tree.reveal(&path);
+            if let Some(position) = self.tree.selected_pos() {
+                self.scroll = position;
+            }
+        }
     }
 
-    fn refresh_matches(&mut self) {
+    fn refresh_search(&mut self) {
         let query = self.query.to_lowercase();
-        self.matches = if self.search_all {
+        let root = self.tree.root().to_path_buf();
+        let paths: Vec<PathBuf> = if self.search_all {
             self.ensure_index();
             match &self.search_index {
                 Some((_, _, dirs)) => dirs
@@ -240,7 +272,26 @@ impl App {
                 .filter(|path| name_matches(path, &query))
                 .collect()
         };
-        self.search_sel = 0;
+
+        let mut trie = TrieNode {
+            path: root,
+            name: String::new(),
+            is_match: false,
+            children: Vec::new(),
+        };
+        for path in paths {
+            insert_path(&mut trie, &path);
+        }
+        sort_trie(&mut trie);
+
+        self.search_rows.clear();
+        let mut guides = Vec::new();
+        flatten_trie(&trie, &mut guides, &mut self.search_rows);
+        self.search_sel = self
+            .search_rows
+            .iter()
+            .position(|row| row.is_match)
+            .unwrap_or(0);
         self.search_scroll = 0;
     }
 
@@ -260,16 +311,16 @@ impl App {
     }
 
     fn search_move(&mut self, delta: isize) {
-        if self.matches.is_empty() {
+        if self.search_rows.is_empty() {
             return;
         }
-        let last = self.matches.len() as isize - 1;
+        let last = self.search_rows.len() as isize - 1;
         self.search_sel = (self.search_sel as isize + delta).clamp(0, last) as usize;
     }
 
     fn search_select(&mut self, index: usize) {
-        if !self.matches.is_empty() {
-            self.search_sel = index.min(self.matches.len() - 1);
+        if !self.search_rows.is_empty() {
+            self.search_sel = index.min(self.search_rows.len() - 1);
         }
     }
 
@@ -305,7 +356,7 @@ impl App {
         self.tree.toggle_hidden();
         self.sync_config();
         if self.mode == Mode::Search {
-            self.refresh_matches();
+            self.refresh_search();
         }
     }
 
@@ -326,4 +377,57 @@ fn name_matches(path: &Path, query: &str) -> bool {
     path.file_name()
         .map(|name| name.to_string_lossy().to_lowercase().contains(query))
         .unwrap_or(false)
+}
+
+fn insert_path(root: &mut TrieNode, path: &Path) {
+    let Ok(relative) = path.strip_prefix(&root.path) else {
+        return;
+    };
+    let mut node = root;
+    for component in relative.components() {
+        let std::path::Component::Normal(name) = component else {
+            continue;
+        };
+        let label = name.to_string_lossy().into_owned();
+        let position = match node.children.iter().position(|child| child.name == label) {
+            Some(position) => position,
+            None => {
+                node.children.push(TrieNode {
+                    path: node.path.join(name),
+                    name: label,
+                    is_match: false,
+                    children: Vec::new(),
+                });
+                node.children.len() - 1
+            }
+        };
+        node = &mut node.children[position];
+    }
+    node.is_match = true;
+}
+
+fn sort_trie(node: &mut TrieNode) {
+    node.children
+        .sort_by_cached_key(|child| child.name.to_lowercase());
+    for child in &mut node.children {
+        sort_trie(child);
+    }
+}
+
+fn flatten_trie(node: &TrieNode, guides: &mut Vec<bool>, out: &mut Vec<SearchRow>) {
+    let count = node.children.len();
+    for (index, child) in node.children.iter().enumerate() {
+        let is_last = index + 1 == count;
+        out.push(SearchRow {
+            path: child.path.clone(),
+            name: child.name.clone(),
+            guides: guides.clone(),
+            is_last,
+            is_match: child.is_match,
+            has_children: !child.children.is_empty(),
+        });
+        guides.push(!is_last);
+        flatten_trie(child, guides, out);
+        guides.pop();
+    }
 }
